@@ -274,7 +274,7 @@ void SPI_READ(SPI_ADDR* A,uint8_t *dst, unsigned long len ){
 		DMACTL2 |= DMA4TSEL__SPIRXIFG;
 		DMA4CTL = DMADT_0 + DMADSTINCR_3 + DMASRCINCR_0 +  DMADSTBYTE__BYTE  + DMASRCBYTE__BYTE + DMALEVEL__EDGE;
 		DMA4SA = &SPIRXBUF;
-		DMA4DA = dst;
+		__data16_write_addr(&DMA4DA, dst); /* direct assignment does not work for 20-bit addresses with GCC */
 		DMA4SZ = len;
 		DMA4CTL |= DMAEN__ENABLE;
 		//Trigger TX DMA
@@ -384,7 +384,7 @@ void SPI_WRITE2(SPI_ADDR* A, const uint8_t *src, unsigned long len, uint16_t tim
 			DMACTL1 = (DMACTL1 & 0x00ff) | DMA3TSEL__TA1CCR2;
 		}
 		DMA3CTL = DMADT_0 + DMADSTINCR_0 + DMASRCINCR_3 +  DMADSTBYTE__BYTE  + DMASRCBYTE__BYTE + DMALEVEL__EDGE;
-		DMA3SA = src;
+		__data16_write_addr(&DMA3SA, src); /* direct assignment does not work for 20-bit addresses with GCC */
 		DMA3DA = &SPITXBUF;
 		DMA3SZ = len;
 		DMA3CTL |= DMAEN__ENABLE;
