@@ -38,21 +38,24 @@
 //                |             P1.5|-> Slave Chip Select (GPIO <-> CS)
 
 #include "extfram.h"
+#include <string.h>
+#include <stdint.h>
 
+#if defined(__MSP430__) || defined(__MSP432__)
+#define __EXT_FRAM_MSP__
+#endif
+
+#ifdef __EXT_FRAM_MSP__
 #include <driverlib.h>
 
 #ifdef __MSP430__
 #include <msp430.h>
-#else
+#elif defined(__MSP432__)
 #include <msp.h>
-#include <stdint.h>
 uint8_t controlTable[1024];
 uint32_t curDMATransmitChannelNum, curDMAReceiveChannelNum;
 static uint16_t msp432_dma_timer_delay;
 #endif
-
-#include <string.h>
-
 
 #ifdef __MSP430__
 #define UCA3
@@ -111,8 +114,6 @@ static uint16_t msp432_dma_timer_delay;
 #define MSP432_DMA_EUSCI_TRANSMIT_CHANNEL_NUM (MSP432_DMA_EUSCI_TRANSMIT_CHANNEL & 0x0F)
 #define MSP432_DMA_EUSCI_RECEIVE_CHANNEL_NUM (MSP432_DMA_EUSCI_RECEIVE_CHANNEL & 0x0F)
 
-#include <stdint.h>
-
 #ifdef __MSP430__
 #define SLAVE_CS_OUT    P6OUT
 #define SLAVE_CS_DIR    P6DIR
@@ -161,6 +162,16 @@ static uint16_t msp432_dma_timer_delay;
 
 #define MIN_VAL(x, y) ((x) < (y) ? (x) : (y))
 
+#elif defined(__STM32__)
+
+#include "qspiFRAM.h"
+
+#else
+
+#error "Please defined __MSP430__, __MSP432__ or __STM32__ according to the target board"
+
+#endif
+
 void eraseFRAM(){
 	uint8_t val;
 #ifdef FRAM_8Mb
@@ -169,6 +180,7 @@ void eraseFRAM(){
 	unsigned long cnt = 0x7ffff;
 #endif
 
+#ifdef __EXT_FRAM_MSP__
 	SLAVE_CS_OUT &= ~(SLAVE_CS_PIN);
 		SPITXBUF = CMD_WREN;
 		while(SPISTATW & 0x1);
@@ -189,11 +201,20 @@ void eraseFRAM(){
 		COMMS_LED_OUT |=0x1;
 		val = SPIRXBUF; //Clean the overrun flag
 	SLAVE_CS_OUT |= SLAVE_CS_PIN;
+#elif defined(__STM32__)
+	uint8_t buffer[64];
+	for (uint8_t idx = 0; idx < 64; idx++) {
+		buffer[idx] = 0xff;
+	}
+	for (uint32_t addr = 0; addr < cnt; addr += 64) {
+		FRAM_Write(addr, buffer, 64);
+	}
+#endif
 }
 
 void initSPI()
 {
-
+#ifdef __EXT_FRAM_MSP__
 #ifdef __MSP430__
     SPISEL0 |= 0x07;
     SPISEL1 &= 0xF8;
@@ -244,11 +265,13 @@ void initSPI()
 		SPITXBUF = 0xC0;
 		while(SPISTATW & 0x1);
 	SLAVE_CS_OUT |= SLAVE_CS_PIN;
-
-
-
+#elif defined(__STM32__)
+	FRAM_Interface_Reset();
+	FRAM_WREN();
+#endif
 }
 void SPI_READ(SPI_ADDR* A,uint8_t *dst, unsigned long len ){
+#ifdef __EXT_FRAM_MSP__
 	uint8_t dummy = 0x00;
 
 	SLAVE_CS_OUT &= ~(SLAVE_CS_PIN);
@@ -351,6 +374,9 @@ void SPI_READ(SPI_ADDR* A,uint8_t *dst, unsigned long len ){
 #endif
 	while(SPISTATW & 0x1);
 	SLAVE_CS_OUT |= SLAVE_CS_PIN;
+#elif defined(__STM32__)
+	FRAM_Read(A->L, dst, len);
+#endif
 }
 
 void SPI_WRITE(SPI_ADDR* A, const uint8_t *src, unsigned long len ){
@@ -358,6 +384,7 @@ void SPI_WRITE(SPI_ADDR* A, const uint8_t *src, unsigned long len ){
 }
 
 void SPI_WRITE2(SPI_ADDR* A, const uint8_t *src, unsigned long len, uint16_t timer_delay) {
+#ifdef __EXT_FRAM_MSP__
 	//All writes to the memory begin with a WREN opcode with CS being asserted and deasserted.
 	SLAVE_CS_OUT &= ~(SLAVE_CS_PIN);
 		SPITXBUF = CMD_WREN;
@@ -465,9 +492,13 @@ void SPI_WRITE2(SPI_ADDR* A, const uint8_t *src, unsigned long len, uint16_t tim
 	if (do_shutdown) {
 		SLAVE_CS_OUT |= SLAVE_CS_PIN;
 	}
+#elif defined(__STM32__)
+	FRAM_Write(A->L, src, len);
+#endif
 }
 
 void SPI_FILL_Q15(SPI_ADDR* A, int16_t val, unsigned long len ){
+#ifdef __EXT_FRAM_MSP__
 	len = len * sizeof(int16_t);
 	uint8_t val_high = (((uint16_t)val) & 0xFF00) >> 8;
 	uint8_t val_low = ((uint16_t)val) & 0x00FF;
@@ -543,9 +574,12 @@ void SPI_FILL_Q15(SPI_ADDR* A, int16_t val, unsigned long len ){
 		uint8_t dummy=SPIRXBUF;
 
 	SLAVE_CS_OUT |= SLAVE_CS_PIN;
+#else
+	while (1) {} // TODO
+#endif
 }
 
-#ifndef __MSP430__
+#ifdef __MSP432__
 
 void DMA_INT1_IRQHandler(void) {
     MAP_DMA_clearInterruptFlag(curDMATransmitChannelNum);
