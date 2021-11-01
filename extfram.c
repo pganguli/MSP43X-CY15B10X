@@ -129,6 +129,36 @@ static uint16_t msp432_dma_timer_delay;
 #define COMMS_LED_DIR   P1DIR
 #define COMMS_LED_PIN   BIT0
 
+#elif defined(__STM32__)
+
+#include "qspiFRAM.h"
+#include "main.h"
+
+#define USE_STM32_QSPI 0
+
+#define SPI_HANDLE hspi2
+
+extern SPI_HandleTypeDef SPI_HANDLE;
+
+#define CHECK_HAL_CALL(x) if (x != HAL_OK) { Error_Handler(); }
+
+#define SLAVE_CS_PORT GPIOG
+#define SLAVE_CS_PIN GPIO_PIN_11
+
+#define SPI_ENABLE() HAL_GPIO_WritePin(SLAVE_CS_PORT, SLAVE_CS_PIN, GPIO_PIN_RESET)
+#define SPI_DISABLE() HAL_GPIO_WritePin(SLAVE_CS_PORT, SLAVE_CS_PIN, GPIO_PIN_SET)
+
+static void SPI_Send_Bytes(uint8_t *buf, uint8_t len)
+{
+	CHECK_HAL_CALL(HAL_SPI_Transmit(&SPI_HANDLE, buf, len, HAL_MAX_DELAY));
+}
+
+#else
+
+#error "Please defined __MSP430__, __MSP432__ or __STM32__ according to the target board"
+
+#endif
+
 //WREN Set write enable latch 0000 0110b
 #define CMD_WREN 0x06
 //WRDI Reset write enable latch 0000 0100b
@@ -161,16 +191,6 @@ static uint16_t msp432_dma_timer_delay;
 #define DUMMY   0xFF
 
 #define MIN_VAL(x, y) ((x) < (y) ? (x) : (y))
-
-#elif defined(__STM32__)
-
-#include "qspiFRAM.h"
-
-#else
-
-#error "Please defined __MSP430__, __MSP432__ or __STM32__ according to the target board"
-
-#endif
 
 void eraseFRAM(){
 	uint8_t val;
@@ -266,8 +286,31 @@ void initSPI()
 		while(SPISTATW & 0x1);
 	SLAVE_CS_OUT |= SLAVE_CS_PIN;
 #elif defined(__STM32__)
+#  if USE_STM32_QSPI
 	FRAM_Interface_Reset();
 	FRAM_WREN();
+#  else
+	GPIO_InitTypeDef GPIO_InitStruct = {0};
+	GPIO_InitStruct.Pin = GPIO_PIN_11;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
+	SPI_DISABLE();
+
+	uint8_t buf[2];
+
+	SPI_ENABLE();
+	buf[0] = CMD_WREN;
+	SPI_Send_Bytes(buf, 1);
+	SPI_DISABLE();
+
+	SPI_ENABLE();
+	buf[0] = CMD_WRSR;
+	buf[1] = 0xC0;
+	SPI_Send_Bytes(buf, 2);
+	SPI_DISABLE();
+#  endif
 #endif
 }
 void SPI_READ(SPI_ADDR* A,uint8_t *dst, unsigned long len ){
@@ -375,7 +418,20 @@ void SPI_READ(SPI_ADDR* A,uint8_t *dst, unsigned long len ){
 	while(SPISTATW & 0x1);
 	SLAVE_CS_OUT |= SLAVE_CS_PIN;
 #elif defined(__STM32__)
+# if USE_STM32_QSPI
 	FRAM_Read(A->L, dst, len);
+# else
+	uint8_t buf[4];
+
+	SPI_ENABLE();
+	buf[0] = CMD_READ;
+	buf[1] = A->byte[2];
+	buf[2] = A->byte[1];
+	buf[3] = A->byte[0];
+	SPI_Send_Bytes(buf, 4);
+	HAL_SPI_Receive(&SPI_HANDLE, dst, len, HAL_MAX_DELAY);
+	SPI_DISABLE();
+# endif
 #endif
 }
 
@@ -493,7 +549,25 @@ void SPI_WRITE2(SPI_ADDR* A, const uint8_t *src, unsigned long len, uint16_t tim
 		SLAVE_CS_OUT |= SLAVE_CS_PIN;
 	}
 #elif defined(__STM32__)
+# if USE_STM32_QSPI
 	FRAM_Write(A->L, src, len);
+# else
+	uint8_t buf[4];
+
+	SPI_ENABLE();
+	buf[0] = CMD_WREN;
+	SPI_Send_Bytes(buf, 1);
+	SPI_DISABLE();
+
+	SPI_ENABLE();
+	buf[0] = CMD_WRITE;
+	buf[1] = A->byte[2];
+	buf[2] = A->byte[1];
+	buf[3] = A->byte[0];
+	SPI_Send_Bytes(buf, 4);
+	HAL_SPI_Transmit(&SPI_HANDLE, src, len, HAL_MAX_DELAY);
+	SPI_DISABLE();
+# endif
 #endif
 }
 
