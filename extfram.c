@@ -172,7 +172,11 @@ static uint16_t msp432_dma_timer_delay;
 
 #endif
 
-void eraseFRAM(){
+void eraseFRAM() {
+	eraseFRAM2(0xff);
+}
+
+void eraseFRAM2(uint8_t init_val){
 	uint8_t val;
 #ifdef FRAM_8Mb
 	unsigned long cnt = 0xfffff;
@@ -196,7 +200,7 @@ void eraseFRAM(){
     	SPITXBUF=0x00;
 		while(cnt--){
 			while(SPISTATW & 0x1);
-			SPITXBUF = 0xff;
+			SPITXBUF = init_val;
 		}
 		COMMS_LED_OUT |=0x1;
 		val = SPIRXBUF; //Clean the overrun flag
@@ -204,7 +208,7 @@ void eraseFRAM(){
 #elif defined(__STM32__)
 	uint8_t buffer[64];
 	for (uint8_t idx = 0; idx < 64; idx++) {
-		buffer[idx] = 0xff;
+		buffer[idx] = init_val;
 	}
 	for (uint32_t addr = 0; addr < cnt; addr += 64) {
 		FRAM_Write(addr, buffer, 64);
