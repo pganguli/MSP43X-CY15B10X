@@ -287,7 +287,6 @@ void SPI_READ(SPI_ADDR* A,uint8_t *dst, unsigned long len ){
 		while(SPISTATW & 0x1);
 		SPITXBUF=A->byte[0];
 		while(SPISTATW & 0x1);
-#if defined(EXTFRAM_USE_DMA)
 #ifdef __MSP430__
 
 		DMACTL1 = (DMACTL1 & 0x00ff) | DMA3TSEL__SPITXIFG;
@@ -369,13 +368,6 @@ void SPI_READ(SPI_ADDR* A,uint8_t *dst, unsigned long len ){
 		while (MAP_DMA_isChannelEnabled(MSP432_DMA_EUSCI_TRANSMIT_CHANNEL_NUM)) {}
 		while (MAP_DMA_isChannelEnabled(MSP432_DMA_EUSCI_RECEIVE_CHANNEL_NUM)) {}
 #endif
-#else
-		while(len--){
-			SPITXBUF=DUMMY;
-			while(SPISTATW & 0x1);  //SPI BUSY
-			*dst++ = SPIRXBUF;
-		}
-#endif
 	while(SPISTATW & 0x1);
 	SLAVE_CS_OUT |= SLAVE_CS_PIN;
 #elif defined(__STM32__)
@@ -405,7 +397,6 @@ void SPI_WRITE2(SPI_ADDR* A, const uint8_t *src, unsigned long len, uint16_t tim
 		SPITXBUF=A->byte[0];
 		while(SPISTATW & 0x1);
 
-#ifdef EXTFRAM_USE_DMA
 #ifdef __MSP430__
 
 		if (!timer_delay) {
@@ -475,19 +466,12 @@ void SPI_WRITE2(SPI_ADDR* A, const uint8_t *src, unsigned long len, uint16_t tim
 			while (MAP_DMA_isChannelEnabled(dma_channel)) {}
 		}
 #endif
-#endif
-#ifndef EXTFRAM_USE_DMA
-		while(len--){
-			SPITXBUF=*src++;
-			while(SPISTATW & 0x1);
-		}
-#endif
 		//clean overrun flag
 		while(SPISTATW & 0x1);
 		uint8_t val=SPIRXBUF;
 
 	uint8_t do_shutdown = 1;
-#if defined(EXTFRAM_USE_DMA) && defined(__MSP432__)
+#if defined(__MSP432__)
 	// Don't shut down external FRAM for asynchronous DMA on MSP432
 	if (timer_delay) {
 		do_shutdown = 0;
