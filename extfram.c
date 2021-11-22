@@ -54,8 +54,9 @@
 #include <msp.h>
 uint8_t controlTable[1024];
 uint32_t curDMATransmitChannelNum, curDMAReceiveChannelNum;
-static uint16_t msp432_dma_timer_delay;
 #endif
+
+static uint16_t dma_timer_delay;
 
 #ifdef __MSP430__
 #define UCA3
@@ -375,8 +376,27 @@ void SPI_READ(SPI_ADDR* A,uint8_t *dst, unsigned long len ){
 #endif
 }
 
+void SPI_WAIT_DMA(void) {
+#ifdef __EXT_FRAM_MSP__
+#ifdef __MSP430__
+	while (DMA3CTL & DMAEN__ENABLE);
+#endif
+#ifdef __MSP432__
+	while (MAP_DMA_isChannelEnabled(curDMATransmitChannelNum)) {}
+#endif
+	if (dma_timer_delay) {
+		TA1CTL = TIMER_A_STOP_MODE + TIMER_A_DO_CLEAR;
+		dma_timer_delay = 0;
+	}
+	// wait for the last byte to be written
+	while(SPISTATW & 0x1);
+	SLAVE_CS_OUT |= SLAVE_CS_PIN;
+#endif
+}
+
 void SPI_WRITE(SPI_ADDR* A, const uint8_t *src, unsigned long len ){
 	SPI_WRITE2(A, src, len, 0);
+	SPI_WAIT_DMA();
 }
 
 void SPI_WRITE2(SPI_ADDR* A, const uint8_t *src, unsigned long len, uint16_t timer_delay) {
@@ -403,9 +423,10 @@ void SPI_WRITE2(SPI_ADDR* A, const uint8_t *src, unsigned long len, uint16_t tim
 			//Triggered when TX is done
 			DMACTL1 = (DMACTL1 & 0x00ff) | DMA3TSEL__SPITXIFG;
 		} else {
-			DMACTL1 = (DMACTL1 & 0x00ff) | DMA3TSEL__TA1CCR2;
+			DMACTL1 = (DMACTL1 & 0x00ff) | DMA3TSEL__TA1CCR0;
 		}
-		DMA3CTL = DMADT_0 + DMADSTINCR_0 + DMASRCINCR_3 +  DMADSTBYTE__BYTE  + DMASRCBYTE__BYTE + DMALEVEL__EDGE;
+		dma_timer_delay = timer_delay;
+		DMA3CTL = DMADT_0 + DMADSTINCR_0 + DMASRCINCR_3 +  DMADSTBYTE__BYTE  + DMASRCBYTE__BYTE + DMALEVEL__EDGE + DMAIE;
 		__data16_write_addr(&DMA3SA, src); /* direct assignment does not work for 20-bit addresses with GCC */
 		DMA3DA = &SPITXBUF;
 		DMA3SZ = len;
@@ -422,15 +443,12 @@ void SPI_WRITE2(SPI_ADDR* A, const uint8_t *src, unsigned long len, uint16_t tim
 			TA1CCR1 = 1; // a random number smaller than TA1CCR0; for generating PWM signals
 			TA1CTL = TIMER_A_CLOCKSOURCE_SMCLK + TIMER_A_CLOCKSOURCE_DIVIDER_1 + TIMER_A_UP_MODE;
 		}
-		while(DMA3CTL & DMAEN__ENABLE);
-		if (timer_delay) {
-			TA1CTL = TIMER_A_STOP_MODE + TIMER_A_DO_CLEAR;
-		}
+		__bis_SR_register(GIE);
 #else
 		// Ref: dma_eusci_spi.c from https://e2e.ti.com/support/microcontrollers/msp430/f/166/t/453110?MSP432-SPI-with-DMA
 		MAP_DMA_enableModule();
 		MAP_DMA_setControlBase(controlTable);
-		msp432_dma_timer_delay = timer_delay;
+		dma_timer_delay = timer_delay;
 		uint32_t dma_mapping, dma_channel;
 		if (!timer_delay) {
 			dma_mapping = MSP432_DMA_EUSCI_TRANSMIT_CHANNEL;
@@ -462,28 +480,21 @@ void SPI_WRITE2(SPI_ADDR* A, const uint8_t *src, unsigned long len, uint16_t tim
 			TA1CCR1 = 1;
 			TA1CTL = TIMER_A_CLOCKSOURCE_SMCLK + TIMER_A_CLOCKSOURCE_DIVIDER_1 + TIMER_A_UP_MODE;
 		}
-		if (!timer_delay) {
-			while (MAP_DMA_isChannelEnabled(dma_channel)) {}
-		}
 #endif
-		//clean overrun flag
-		while(SPISTATW & 0x1);
-		uint8_t val=SPIRXBUF;
-
-	uint8_t do_shutdown = 1;
-#if defined(__MSP432__)
-	// Don't shut down external FRAM for asynchronous DMA on MSP432
-	if (timer_delay) {
-		do_shutdown = 0;
-	}
-#endif
-	if (do_shutdown) {
-		SLAVE_CS_OUT |= SLAVE_CS_PIN;
-	}
 #elif defined(__STM32__)
 	FRAM_Write(A->L, src, len);
 #endif
 }
+
+#ifdef __MSP430__
+
+#pragma vector=DMA_VECTOR
+__interrupt void DMA_ISR(void)
+{
+	DMA3CTL &= ~DMAIE;
+}
+
+#endif
 
 #ifdef __MSP432__
 
@@ -492,11 +503,6 @@ void DMA_INT1_IRQHandler(void) {
     MAP_DMA_disableInterrupt(DMA_INT1);
     MAP_Interrupt_disableInterrupt(DMA_INT1);
     MAP_DMA_disableChannel(curDMATransmitChannelNum);
-    if (msp432_dma_timer_delay) {
-        SLAVE_CS_OUT |= SLAVE_CS_PIN;
-        TA1CTL = TIMER_A_STOP_MODE + TIMER_A_DO_CLEAR;
-        msp432_dma_timer_delay = 0;
-    }
 }
 
 void DMA_INT2_IRQHandler(void) {

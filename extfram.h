@@ -21,6 +21,7 @@ void eraseFRAM(void);
 void eraseFRAM2(uint8_t init_val);
 void initSPI(void);
 void SPI_READ(SPI_ADDR* A,uint8_t *dst, unsigned long len );
+void SPI_WAIT_DMA();
 void SPI_WRITE(SPI_ADDR* A, const uint8_t *src, unsigned long len );
 void SPI_WRITE2(SPI_ADDR* A, const uint8_t *src, unsigned long len, uint16_t timer_delay );
 uint8_t testSPI(void);
