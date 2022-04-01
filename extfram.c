@@ -2,7 +2,6 @@
  * extfram.h
  *
  *  Created on: 2020年7月8日
- *      Author: akai
  *  Range : 0x00000 - 0xFFFFF (20bit) //8Mb
  *          0x00000 - 0x7FFFF // 4Mb
  *  Clock : up to 20 MHz (8Mb)
