@@ -14,13 +14,13 @@
 //                |                 |
 //                |                 |
 //                |                 |
-//                |             P6.0|-> Data Out (UCA3SIMO)
+//                |             P6.0|-> Data Out (UCA3SIMO <-> SDI)
 //                |                 |
-//                |             P6.1|<- Data In (UCA3SOMI)
+//                |             P6.1|<- Data In (UCA3SOMI <-> SDO)
 //                |                 |
-//                |             P6.2|-> Serial Clock Out (UCA3	CLK)
+//                |             P6.2|-> Serial Clock Out (UCA3CLK <-> SCK)
 //                |                 |
-//                |             P6.3|-> Slave Chip Select (GPIO)
+//                |             P6.3|-> Slave Chip Select (GPIO <-> CS)
 
 
 //                   MSP432P401R (100 pin, using UCA1)
