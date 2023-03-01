@@ -9,6 +9,14 @@ extern "C" {
 	
 #define EXTFRAM_USE_DMA
 
+//FRAM SPEED control
+#ifdef __MSP430__
+#define FRAM_FREQ_DIVIDER 4
+#elif defined(__MSP432__)
+// Somehow too fast SPI clocks result in incorrect values in SPI_READ with DMA
+#define FRAM_FREQ_DIVIDER 6
+#endif
+
 extern uint8_t controlTable[1024] __attribute__((aligned (1024)));
 extern uint32_t curDMATransmitChannelNum, curDMAReceiveChannelNum;
 
