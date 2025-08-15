@@ -51,7 +51,7 @@
 #include <msp430.h>
 #elif defined(__MSP432__)
 #include <msp.h>
-uint8_t controlTable[1024];
+uint8_t controlTable[1024] __attribute__((section(".noinit")));
 uint32_t curDMATransmitChannelNum, curDMAReceiveChannelNum;
 #endif
 
