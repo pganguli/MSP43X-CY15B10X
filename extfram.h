@@ -9,6 +9,8 @@ extern "C" {
 	
 #define EXTFRAM_USE_DMA
 
+#define FRAM_8Mb
+
 //FRAM SPEED control
 #ifdef __MSP430__
 #define FRAM_FREQ_DIVIDER 4
