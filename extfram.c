@@ -318,6 +318,10 @@ void SPI_READ(SPI_ADDR* A, uint8_t* dst, unsigned long len) {
   // RX/TX DMA triggers exist on only one DMA channel on the FR5962.  Transfer
   // byte-by-byte in software instead (fine for the stable-power milestone).
   (void)dummy;
+  // Drain the echo byte left in RXBUF from the last address-phase byte;
+  // UCRXIFG is already set and would cause the first loop iteration to read
+  // stale data instead of the first actual FRAM byte.
+  (void)SPIRXBUF;
   for (unsigned long i = 0; i < len; i++) {
     while (!(SPIIFG & UCTXIFG));
     SPITXBUF = 0x00;  // clock out a dummy byte
