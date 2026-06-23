@@ -70,7 +70,11 @@ uint32_t curDMATransmitChannelNum, curDMAReceiveChannelNum;
 
 static uint16_t dma_timer_delay;
 
-#ifdef __MSP430__
+#if defined(__MSP430FR5962__)
+// Riotee board: the external FRAM is wired to eUSCI_B1 on P5.0-P5.3
+// (eUSCI_A0/P2.x is the C2C link to the nRF52, so UCA3/P6 is unavailable).
+#define UCB1
+#elif defined(__MSP430__)
 #define UCA3
 #else
 #define UCA1
@@ -94,8 +98,8 @@ static uint16_t dma_timer_delay;
 #endif
 
 #ifdef UCB1
-// Does not support DMA read,
 #define DMA3TSEL__SPITXIFG DMA3TSEL__UCB1TXIFG
+#define DMA4TSEL__SPIRXIFG DMA4TSEL__UCB1RXIFG
 #define SPITXBUF UCB1TXBUF
 #define SPIRXBUF UCB1RXBUF
 #define SPISTATW UCB1STATW
@@ -129,7 +133,14 @@ static uint16_t dma_timer_delay;
 #define MSP432_DMA_EUSCI_RECEIVE_CHANNEL_NUM \
   (MSP432_DMA_EUSCI_RECEIVE_CHANNEL & 0x0F)
 
-#ifdef __MSP430__
+#if defined(__MSP430FR5962__)
+// CS driven as GPIO on P5.3 (Riotee pad D7).  UCB1 STE on P5.3 is NOT used
+// as hardware-CS; we leave it unconfigured and drive it as a plain GPIO so
+// the timing matches the FR5994 driver.
+#define SLAVE_CS_OUT P5OUT
+#define SLAVE_CS_DIR P5DIR
+#define SLAVE_CS_PIN BIT3
+#elif defined(__MSP430__)
 #define SLAVE_CS_OUT P6OUT
 #define SLAVE_CS_DIR P6DIR
 #define SLAVE_CS_PIN BIT3
@@ -231,7 +242,15 @@ void eraseFRAM2(uint8_t init_val) {
 
 void initSPI() {
 #ifdef __EXT_FRAM_MSP__
-#ifdef __MSP430__
+#if defined(__MSP430FR5962__)
+  // eUSCI_B1 primary module function (SEL1=0, SEL0=1 per Table 9-31):
+  //   P5.0 = UCB1SIMO (Riotee D10)
+  //   P5.1 = UCB1SOMI (Riotee D9)
+  //   P5.2 = UCB1CLK  (Riotee D8)
+  //   P5.3 = GPIO CS  (Riotee D7, left as GPIO; UCB1STE unused)
+  P5SEL0 |= BIT0 | BIT1 | BIT2;
+  P5SEL1 &= ~(BIT0 | BIT1 | BIT2);
+#elif defined(__MSP430__)
   SPISEL0 |= 0x07;
   SPISEL1 &= 0xF8;
 #else
@@ -294,7 +313,18 @@ void SPI_READ(SPI_ADDR* A, uint8_t* dst, unsigned long len) {
   while (SPISTATW & 0x1);
   SPITXBUF = A->byte[0];
   while (SPISTATW & 0x1);
-#ifdef __MSP430__
+#if defined(__MSP430FR5962__)
+  // Riotee/UCB1: the dual-DMA read used below is unavailable because UCB1's
+  // RX/TX DMA triggers exist on only one DMA channel on the FR5962.  Transfer
+  // byte-by-byte in software instead (fine for the stable-power milestone).
+  (void)dummy;
+  for (unsigned long i = 0; i < len; i++) {
+    while (!(SPIIFG & UCTXIFG));
+    SPITXBUF = 0x00;  // clock out a dummy byte
+    while (!(SPIIFG & UCRXIFG));
+    dst[i] = SPIRXBUF;  // capture the byte shifted in
+  }
+#elif defined(__MSP430__)
 
   DMACTL1 = (DMACTL1 & 0x00ff) | DMA3TSEL__SPITXIFG;
   // Write dummy data to TX
@@ -436,7 +466,18 @@ void SPI_WRITE2(SPI_ADDR* A, const uint8_t* src, unsigned long len,
   SPITXBUF = A->byte[0];
   while (SPISTATW & 0x1);
 
-#ifdef __MSP430__
+#if defined(__MSP430FR5962__)
+  // Riotee/UCB1: software byte-by-byte write (no DMA — see SPI_READ).  The
+  // timer-paced energy-recovery delay used on the DMA path is not applied
+  // here; that only matters for the battery-free milestone.
+  (void)timer_delay;
+  for (unsigned long i = 0; i < len; i++) {
+    while (!(SPIIFG & UCTXIFG));
+    SPITXBUF = src[i];
+  }
+  while (SPISTATW & 0x1);
+  SLAVE_CS_OUT |= SLAVE_CS_PIN;  // release CS (no SPI_WAIT_DMA on this path)
+#elif defined(__MSP430__)
 
   if (!timer_delay) {
     // Triggered when TX is done
